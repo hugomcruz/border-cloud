@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { LoginForm } from "@/components/LoginForm";
 
 export default function LoginPage() {
@@ -11,7 +12,7 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div className="relative z-10">
-          <img
+          <Image
             src="/border-logo.svg"
             alt="Border Innovation"
             width={300}
@@ -42,7 +43,7 @@ export default function LoginPage() {
       <div className="flex flex-1 flex-col items-center justify-center bg-background px-6">
         {/* Mobile brand */}
         <div className="flex lg:hidden flex-col items-center mb-8">
-          <img
+          <Image
             src="/border-logo.svg"
             alt="Border Innovation"
             width={180}

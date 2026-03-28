@@ -12,8 +12,9 @@ export async function POST(
   { params }: { params: { name: string } },
 ): Promise<Response> {
   const cookie = request.headers.get("cookie") ?? "";
+  const projectId = request.nextUrl.searchParams.get("project_id") ?? "";
   const upstream = await fetch(
-    `${API_URL}/vms/${encodeURIComponent(params.name)}/restore`,
+    `${API_URL}/vms/${encodeURIComponent(params.name)}/restore?project_id=${encodeURIComponent(projectId)}`,
     { method: "POST", headers: { cookie } },
   );
   const data = await upstream.json();

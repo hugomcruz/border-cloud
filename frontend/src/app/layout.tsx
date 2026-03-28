@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { OperationProvider } from "@/context/OperationContext";
+import { ProjectProvider } from "@/context/ProjectContext";
 
 export const metadata: Metadata = {
   title: "Border Cloud",
@@ -15,11 +16,13 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="font-sans antialiased">
-        <OperationProvider>
-          <div className="flex h-screen overflow-hidden">
-            {children}
-          </div>
-        </OperationProvider>
+        <ProjectProvider>
+          <OperationProvider>
+            <div className="flex h-screen overflow-hidden">
+              {children}
+            </div>
+          </OperationProvider>
+        </ProjectProvider>
       </body>
     </html>
   );

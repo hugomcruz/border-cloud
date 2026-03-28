@@ -30,12 +30,14 @@ import {
   Settings,
   Loader2,
   Lock,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { VirtualMachine, OperationEvent, OperationStep } from "@/types";
+import type { VirtualMachine, OperationEvent, OperationStep, OperationLog } from "@/types";
 
 interface VmCardProps {
   vm: VirtualMachine;
+  projectId: number;
   onRefresh: () => void;
 }
 
@@ -47,6 +49,7 @@ const statusConfig: Record<string, { dot: string; label: string; text: string }>
 
 function useSimpleAction(
   vmName: string,
+  projectId: number,
   onRefresh: () => void,
 ) {
   const { lock, unlock, isLocked: isLockedFn } = useOperation();
@@ -58,7 +61,7 @@ function useSimpleAction(
     lock(vmName, action);
     setError(null);
     try {
-      await apiFetch(`/api/vms/${encodeURIComponent(vmName)}/${action}`, { method: "POST" });
+      await apiFetch(`/api/vms/${encodeURIComponent(vmName)}/${action}?project_id=${projectId}`, { method: "POST" });
       onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Operation failed");
@@ -70,7 +73,7 @@ function useSimpleAction(
   return { run, error, setError, isLocked };
 }
 
-function useSseAction(vmName: string, onRefresh: () => void) {
+function useSseAction(vmName: string, projectId: number, onRefresh: () => void) {
   const { lock, unlock, isLocked: isLockedFn } = useOperation();
   const isLocked = isLockedFn(vmName);
   const [steps, setSteps] = useState<OperationStep[]>([]);
@@ -89,7 +92,7 @@ function useSseAction(vmName: string, onRefresh: () => void) {
     try {
       // Step 1: Start the operation; backend returns { op_id } (202)
       const startRes = await fetch(
-        `/api/vms/${encodeURIComponent(vmName)}/${action}`,
+        `/api/vms/${encodeURIComponent(vmName)}/${action}?project_id=${projectId}`,
         { method: "POST" },
       );
       if (!startRes.ok) {
@@ -170,16 +173,40 @@ function useSseAction(vmName: string, onRefresh: () => void) {
   return { run, steps, error, setError, completedSteps, warning, setWarning, isLocked };
 }
 
-export function VmCard({ vm, onRefresh }: VmCardProps) {
-  const startStop = useSimpleAction(vm.name, onRefresh);
-  const sse = useSseAction(vm.name, onRefresh);
+export function VmCard({ vm, projectId, onRefresh }: VmCardProps) {
+  const startStop = useSimpleAction(vm.name, projectId, onRefresh);
+  const sse = useSseAction(vm.name, projectId, onRefresh);
   const [showSettings, setShowSettings] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [logs, setLogs] = useState<OperationLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  async function handleOpenLogs() {
+    setShowLogs(true);
+    setLogsLoading(true);
+    try {
+      const data = await apiFetch<{ logs: OperationLog[] }>(
+        `/api/vms/${encodeURIComponent(vm.name)}/logs?project_id=${projectId}`
+      );
+      setLogs(data.logs);
+    } catch {
+      setLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  }
 
   function handleDeleteConfirm() {
     setShowDeleteDialog(false);
     void sse.run("delete");
   }
+
+  const operationStatusColors: Record<string, string> = {
+    done: "text-green-400 bg-green-500/10",
+    error: "text-red-400 bg-red-500/10",
+    "in-progress": "text-yellow-400 bg-yellow-500/10",
+  };
 
   const anyError = startStop.error ?? sse.error;
   const anyCompletedSteps = sse.completedSteps;
@@ -376,7 +403,71 @@ export function VmCard({ vm, onRefresh }: VmCardProps) {
             </>
           )}
         </div>
+
+        {/* Log toggle */}
+        <div className="border-t border-border pt-2 mt-1">
+          <button
+            onClick={() => void handleOpenLogs()}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <History className="h-3.5 w-3.5" />
+            View logs
+          </button>
+        </div>
       </CardContent>
+
+      {/* VM Logs dialog */}
+      <Dialog open={showLogs} onOpenChange={setShowLogs}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-4 w-4" />
+              Logs — {vm.name}
+            </DialogTitle>
+            <DialogDescription>Operation history for this VM.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 max-h-[60vh] overflow-y-auto">
+            {logsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading…
+              </div>
+            ) : logs.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">No events yet.</p>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Time</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Event</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">By</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((entry) => (
+                    <tr key={entry.id} className="border-t border-border hover:bg-muted/20">
+                      <td className="px-3 py-2 font-mono whitespace-nowrap text-muted-foreground">
+                        {new Date(entry.started_at).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2 capitalize">{entry.operation}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{entry.initiated_by}</td>
+                      <td className="px-3 py-2">
+                        <span className={cn("px-1.5 py-0.5 rounded font-medium", operationStatusColors[entry.status] ?? "text-muted-foreground")}>
+                          {entry.status}
+                        </span>
+                        {entry.error_message && (
+                          <p className="text-red-400 mt-0.5">{entry.error_message}</p>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

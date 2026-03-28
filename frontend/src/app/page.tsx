@@ -8,10 +8,12 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { WarningBanner } from "@/components/WarningBanner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOperation } from "@/context/OperationContext";
+import { useProject } from "@/context/ProjectContext";
 import { RefreshCw, Server } from "lucide-react";
 import type { VirtualMachine } from "@/types";
 
 export default function Home() {
+  const { selectedProject, isLoading: projectLoading } = useProject();
   const [vms, setVms] = useState<VirtualMachine[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -19,9 +21,10 @@ export default function Home() {
   const [firewallWarning, setFirewallWarning] = useState<string | null>(null);
 
   const refreshVms = useCallback(async (manual = false) => {
+    if (!selectedProject) return;
     if (manual) setRefreshing(true);
     try {
-      const data = await apiFetch<{ vms: VirtualMachine[] }>("/api/vms");
+      const data = await apiFetch<{ vms: VirtualMachine[] }>(`/api/vms?project_id=${selectedProject.id}`);
       setVms(data.vms);
       setFetchError(null);
     } catch (err) {
@@ -30,22 +33,23 @@ export default function Home() {
       setLoading(false);
       if (manual) setRefreshing(false);
     }
-  }, []);
+  }, [selectedProject]);
 
   const syncFirewall = useCallback(async () => {
+    if (!selectedProject) return;
     try {
       const { ip } = await apiFetch<{ ip: string }>("/api/ip");
       await apiFetch("/api/firewall/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ip }),
+        body: JSON.stringify({ ip, project_id: selectedProject.id }),
       });
     } catch {
       setFirewallWarning(
         "Could not sync your IP with the firewall. Some VM operations may be blocked."
       );
     }
-  }, []);
+  }, [selectedProject]);
 
   const { anyRunning } = useOperation();
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -65,14 +69,43 @@ export default function Home() {
   }, [anyRunning, refreshVms]);
 
   useEffect(() => {
-    void refreshVms();
-    void syncFirewall();
-  }, [refreshVms, syncFirewall]);
+    if (selectedProject) {
+      setLoading(true);
+      void refreshVms();
+      void syncFirewall();
+    }
+  }, [selectedProject, refreshVms, syncFirewall]);
 
   function handleLogout() {
     void fetch("/api/auth/logout", { method: "POST" }).finally(() => {
       window.location.href = "/login";
     });
+  }
+
+  // While projects are loading, show a minimal skeleton layout
+  if (projectLoading) {
+    return (
+      <>
+        <Sidebar onLogout={handleLogout} />
+        <div className="flex flex-1 items-center justify-center">
+          <Skeleton className="h-32 w-64 rounded-xl" />
+        </div>
+      </>
+    );
+  }
+
+  // No projects available for this user
+  if (!selectedProject) {
+    return (
+      <>
+        <Sidebar onLogout={handleLogout} />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <Server className="h-12 w-12 text-muted-foreground/30" />
+          <p className="font-medium text-muted-foreground">No projects available</p>
+          <p className="text-sm text-muted-foreground/60">Ask an admin to grant you access to a project.</p>
+        </div>
+      </>
+    );
   }
 
   const runningCount = vms.filter((v) => v.status === "running").length;
@@ -86,7 +119,7 @@ export default function Home() {
         {/* Top bar */}
         <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3">
           <div>
-            <h1 className="text-base font-semibold">Hetzner</h1>
+            <h1 className="text-base font-semibold">{selectedProject?.name ?? "Hetzner"}</h1>
             <p className="text-xs text-muted-foreground">Virtual Machines</p>
           </div>
           <button
@@ -152,7 +185,7 @@ export default function Home() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {vms.map((vm) => (
-                <VmCard key={vm.name} vm={vm} onRefresh={() => void refreshVms()} />
+                <VmCard key={vm.name} vm={vm} projectId={selectedProject?.id ?? 0} onRefresh={() => void refreshVms()} />
               ))}
             </div>
           )}

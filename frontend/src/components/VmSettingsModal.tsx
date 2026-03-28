@@ -64,14 +64,14 @@ export function VmSettingsModal({ vmName, onClose }: VmSettingsModalProps) {
     >
       {/* Panel */}
       <div
-        className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl space-y-5"
+        className="w-full max-w-md rounded-lg bg-card text-card-foreground p-6 shadow-xl space-y-5 border border-border"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">VM Settings — {vmName}</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            className="text-muted-foreground hover:text-foreground text-xl leading-none"
             aria-label="Close"
           >
             ×
@@ -121,10 +121,10 @@ export function VmSettingsModal({ vmName, onClose }: VmSettingsModalProps) {
             </div>
 
             {error && (
-              <p className="text-sm text-red-600">{error}</p>
+              <p className="text-sm text-destructive">{error}</p>
             )}
             {saved && (
-              <p className="text-sm text-green-600">Saved!</p>
+              <p className="text-sm text-green-400">Saved!</p>
             )}
 
             <div className="flex justify-end gap-2 pt-1">

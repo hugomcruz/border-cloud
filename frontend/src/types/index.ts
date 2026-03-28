@@ -67,3 +67,32 @@ export const HETZNER_SERVER_TYPES = [
   "cpx11", "cpx21", "cpx31", "cpx41", "cpx51",
   "ccx13", "ccx23", "ccx33", "ccx43", "ccx53", "ccx63",
 ] as const;
+
+export interface HetznerProject {
+  id: number;
+  name: string;
+  firewall_name: string;
+  firewall_internal: string;
+  cloudflare_zone_id: string;
+  is_active: boolean;
+}
+
+export interface User {
+  id: number;
+  username: string;
+  is_superadmin: boolean;
+  is_active: boolean;
+}
+
+export type OperationStatus = "in-progress" | "done" | "error";
+
+export interface OperationLog {
+  id: number;
+  vm_name: string;
+  operation: string;
+  status: OperationStatus;
+  initiated_by: string;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+}

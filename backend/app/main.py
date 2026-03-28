@@ -3,10 +3,12 @@ from collections.abc import AsyncGenerator
 
 from fastapi import FastAPI
 
+from app.admin.router import router as admin_router
 from app.auth.router import router as auth_router
 from app.config.router import router as config_router
 from app.firewall.router import router as firewall_router
 from app.ip.router import router as ip_router
+from app.projects.router import router as projects_router
 from app.vms.router import router as vms_router
 
 
@@ -25,6 +27,8 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(projects_router)
 app.include_router(vms_router)
 app.include_router(ip_router)
 app.include_router(firewall_router)

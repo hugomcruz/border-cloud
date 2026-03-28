@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function LoginForm() {
-  const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -35,8 +33,9 @@ export function LoginForm() {
         return;
       }
 
-      router.push("/");
-      router.refresh();
+      // Hard navigation so the root layout remounts and ProjectContext re-fetches
+      // with the new auth cookie in place.
+      window.location.href = "/";
     } catch {
       setError("Unable to connect to the server. Please try again.");
     } finally {

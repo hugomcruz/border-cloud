@@ -11,7 +11,11 @@ export function middleware(request: NextRequest) {
     isLoginPage ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/_next/") ||
-    pathname.startsWith("/favicon");
+    pathname.startsWith("/favicon") ||
+    pathname.endsWith(".svg") ||
+    pathname.endsWith(".png") ||
+    pathname.endsWith(".jpg") ||
+    pathname.endsWith(".ico");
 
   if (!token && !isPublicPath) {
     const loginUrl = new URL("/login", request.url);

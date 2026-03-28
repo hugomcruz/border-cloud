@@ -18,7 +18,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.settings import settings  # noqa: E402
 
 DEFAULT_APP_CONFIGS = [
-    ("hetzner_firewall_name", settings.HETZNER_FIREWALL_NAME),
     ("hetzner_default_server_type", "cx23"),
     ("hetzner_default_location", "nbg1"),
     ("hetzner_default_ssh_key", ""),
@@ -38,12 +37,12 @@ async def seed() -> None:
             password_hash = _bcrypt.hashpw(admin_password.encode(), _bcrypt.gensalt(rounds=12)).decode()
             await session.execute(
                 text(
-                    "INSERT INTO users (username, password_hash) VALUES (:username, :hash) "
-                    "ON CONFLICT (username) DO NOTHING"
+                    "INSERT INTO users (username, password_hash, is_superadmin) VALUES (:username, :hash, true) "
+                    "ON CONFLICT (username) DO UPDATE SET is_superadmin = true"
                 ),
                 {"username": "admin", "hash": password_hash},
             )
-            print("Admin user: upserted (or already exists).")
+            print("Admin user: upserted as superadmin.")
 
         # Insert default app_configs — update the value only if the existing row is blank
         for key, default_value in DEFAULT_APP_CONFIGS:
@@ -56,6 +55,24 @@ async def seed() -> None:
                 {"key": key, "value": default_value},
             )
         print("App configs: seeded (existing rows untouched).")
+
+        # Create default Hetzner project from env vars if token is configured
+        if settings.HETZNER_API_TOKEN:
+            await session.execute(
+                text(
+                    "INSERT INTO hetzner_projects (name, api_token, firewall_name) "
+                    "VALUES (:name, :token, :firewall) "
+                    "ON CONFLICT (name) DO NOTHING"
+                ),
+                {
+                    "name": "default",
+                    "token": settings.HETZNER_API_TOKEN,
+                    "firewall": settings.HETZNER_FIREWALL_NAME,
+                },
+            )
+            print("Default Hetzner project: seeded (skipped if already exists).")
+        else:
+            print("WARNING: HETZNER_API_TOKEN not set — skipping default project creation.")
 
         await session.commit()
 
