@@ -1,4 +1,4 @@
-name: Build Backend and Push to Harbor
+name: Build Frontend and Push to Harbor
 
 on:
   workflow_dispatch:
