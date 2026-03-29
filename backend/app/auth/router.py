@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.schemas import LoginRequest, TokenResponse, UserOut
 from app.auth.service import create_access_token, get_current_user, verify_password
 from app.database import async_session_factory, get_db
+from app.limiter import limiter
 from app.models.db import HetznerProject, User, UserProjectPermission
 from app.settings import settings
 
@@ -84,6 +85,7 @@ async def _sync_login_firewall(user_id: int, username: str, ip: str) -> None:
 
 
 @router.post("/token", response_model=TokenResponse)
+@limiter.limit(settings.LOGIN_RATE_LIMIT)
 async def login(
     body: LoginRequest,
     request: Request,

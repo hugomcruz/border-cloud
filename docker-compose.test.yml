@@ -20,11 +20,12 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://test:test@db_test:5432/vmapp_test
-      JWT_SECRET: test-secret
-      HETZNER_TOKEN: test-token
-      CLOUDFLARE_TOKEN: test-token
+      SECRET_KEY: test-jwt-secret-for-integration-tests-only-not-prod
+      HETZNER_API_TOKEN: test-token
+      CLOUDFLARE_API_TOKEN: test-token
       CLOUDFLARE_ZONE_ID: test-zone
       IP_REFLECTION_URL: https://api.ipify.org?format=json
+      LOGIN_RATE_LIMIT: "1000/minute"
     ports:
       - "8000:8000"
 

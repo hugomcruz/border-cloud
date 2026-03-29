@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,7 +23,7 @@ class Settings(BaseSettings):
     # JWT
     SECRET_KEY: str = "changeme"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # IP reflection
     IP_REFLECTION_URL: str = "https://api.ipify.org?format=json"
@@ -35,6 +36,21 @@ class Settings(BaseSettings):
 
     # Logging level for uvicorn and the app (DEBUG, INFO, WARNING, ERROR)
     LOG_LEVEL: str = "info"
+
+    # Enable Swagger UI / OpenAPI endpoints (disable in production)
+    DEBUG: bool = False
+
+    # Login rate limit (slowapi format, e.g. "10/minute")
+    LOGIN_RATE_LIMIT: str = "10/minute"
+
+    @model_validator(mode="after")
+    def _validate_secret_key(self) -> "Settings":
+        if self.SECRET_KEY == "changeme" or len(self.SECRET_KEY) < 32:
+            raise ValueError(
+                "SECRET_KEY must be set to a random string of at least 32 characters. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        return self
 
 
 settings = Settings()

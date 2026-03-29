@@ -13,8 +13,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    ports:
-      - "5432:5432"
+    networks:
+      - backend-net
 
   backend:
     build:
@@ -25,11 +25,15 @@ services:
       db:
         condition: service_healthy
     env_file:
-      - ./backend/.env
+      - .env
     environment:
+      # Override DATABASE_URL to use the Docker service hostname instead of localhost
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vmapp}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-vmapp}
     ports:
       - "8000:8000"
+    networks:
+      - backend-net
+      - frontend-net
 
   frontend:
     build:
@@ -45,6 +49,12 @@ services:
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
     ports:
       - "3000:3000"
+    networks:
+      - frontend-net
+
+networks:
+  backend-net:
+  frontend-net:
 
 volumes:
   pgdata:

@@ -422,22 +422,7 @@ async def _run_restore(name: str, op_id: str, log_id: int, token: str, firewall_
         else:
             log.info("[restore:%s] skipping DNS update (no domain configured in VM settings)", name)
 
-        # Step 3: Update users firewall (non-fatal)
-        if firewall_name:
-            emit({"kind": "step", "step": {"step": "Updating users firewall", "status": "in-progress"}})
-            try:
-                log.info("[restore:%s] upserting users firewall rule: firewall=%r ip=%s", name, firewall_name, public_ip)
-                await upsert_user_ip_rule(firewall_name, public_ip, token, name)
-                emit({"kind": "step", "step": {"step": "Updating users firewall", "status": "done"}})
-            except Exception as exc:
-                log.warning("[restore:%s] upsert_user_ip_rule (users fw) skipped: %s", name, exc)
-                emit({"kind": "step", "step": {"step": "Updating users firewall", "status": "done"}})
-                emit({
-                    "kind": "warning",
-                    "message": f"Users firewall not updated: {exc}",
-                })
-
-        # Step 4: Update internal firewall — add VM's new IP (non-fatal)
+        # Step 3: Update internal firewall — add VM's new IP (non-fatal)
         if firewall_internal:
             emit({"kind": "step", "step": {"step": "Updating internal firewall", "status": "in-progress"}})
             try:

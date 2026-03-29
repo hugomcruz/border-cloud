@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { ChevronDown, LogOut, ScrollText, Server, FolderOpen, Users } from "lucide-react";
+import { ChevronDown, LogOut, ScrollText, Server, FolderOpen, Users, ShieldCheck } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useState } from "react";
@@ -60,6 +60,31 @@ export function Sidebar({ onLogout }: SidebarProps) {
   const pathname = usePathname();
   const { projects, selectedProject, setSelectedProject, currentUser } = useProject();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [ipSyncState, setIpSyncState] = useState<"idle" | "loading" | "done" | "error">("idle");
+
+  async function handleUpdateIp() {
+    setIpSyncState("loading");
+    try {
+      const ipRes = await fetch("/api/ip");
+      if (!ipRes.ok) throw new Error("Could not detect IP");
+      const { ip } = (await ipRes.json()) as { ip: string };
+
+      await Promise.all(
+        projects.map((p) =>
+          fetch("/api/firewall/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ip, project_id: p.id }),
+          })
+        )
+      );
+      setIpSyncState("done");
+    } catch {
+      setIpSyncState("error");
+    } finally {
+      setTimeout(() => setIpSyncState("idle"), 3000);
+    }
+  }
 
   return (
     <aside className="flex h-screen w-56 flex-col border-r border-border bg-card text-card-foreground">
@@ -153,7 +178,24 @@ export function Sidebar({ onLogout }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-border px-3 py-3">
+      <div className="border-t border-border px-3 py-3 space-y-1">
+        <button
+          onClick={handleUpdateIp}
+          disabled={ipSyncState === "loading" || projects.length === 0}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+            ipSyncState === "done" && "text-green-500 hover:bg-green-500/10",
+            ipSyncState === "error" && "text-destructive hover:bg-destructive/10",
+            ipSyncState === "idle" && "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+            ipSyncState === "loading" && "text-muted-foreground opacity-60 cursor-wait",
+          )}
+        >
+          <ShieldCheck className="h-4 w-4 shrink-0" />
+          {ipSyncState === "loading" && "Updating IP…"}
+          {ipSyncState === "done" && "IP updated"}
+          {ipSyncState === "error" && "Update failed"}
+          {ipSyncState === "idle" && "Update My IP"}
+        </button>
         <button
           onClick={onLogout}
           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
