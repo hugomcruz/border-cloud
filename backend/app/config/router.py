@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth.service import get_current_user
 from app.config.schemas import (
@@ -158,7 +159,7 @@ async def list_firewall_targets(
     result = await db.execute(
         select(VmFirewallTarget)
         .where(VmFirewallTarget.vm_name == vm_name)
-        .join(VmFirewallTarget.project)
+        .options(selectinload(VmFirewallTarget.project))
     )
     targets = result.scalars().all()
     return JSONResponse({"targets": [_target_out(t) for t in targets]})
