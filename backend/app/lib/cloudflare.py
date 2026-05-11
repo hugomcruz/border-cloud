@@ -1,5 +1,6 @@
 """Cloudflare DNS API client — update_a_record()."""
 
+import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
@@ -7,6 +8,8 @@ from fastapi import HTTPException
 
 from app.settings import settings
 from app.models.db import VmConfig
+
+log = logging.getLogger(__name__)
 
 
 async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: str = "", cloudflare_api_token: str = "") -> None:
@@ -35,8 +38,17 @@ async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: 
         parts = domain.split(".")
         zone_root = ".".join(parts[-2:]) if len(parts) >= 2 else domain
 
+    effective_token = cloudflare_api_token or settings.CLOUDFLARE_API_TOKEN
+    token_source = "project" if cloudflare_api_token else "global"
+    token_hint = effective_token[:6] + "…" if effective_token else "(empty)"
+    zone_source = "project" if zone_id else ("settings" if settings.CLOUDFLARE_ZONE_ID else "lookup")
+    log.info(
+        "[cloudflare:%s] update_a_record token_source=%s token=%s zone_source=%s zone_id=%r",
+        vm_name, token_source, token_hint, zone_source, zone_id or settings.CLOUDFLARE_ZONE_ID or "(will lookup)",
+    )
+
     headers = {
-        "Authorization": f"Bearer {cloudflare_api_token or settings.CLOUDFLARE_API_TOKEN}",
+        "Authorization": f"Bearer {effective_token}",
         "Content-Type": "application/json",
     }
 
