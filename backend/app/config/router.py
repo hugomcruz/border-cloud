@@ -10,9 +10,11 @@ from app.config.schemas import (
     VmConfigCreate,
     VmConfigOut,
     VmConfigUpdate,
+    VmFirewallTargetCreate,
+    VmFirewallTargetOut,
 )
 from app.database import get_db
-from app.models.db import AppConfig, User, VmConfig
+from app.models.db import AppConfig, HetznerProject, User, VmConfig, VmFirewallTarget
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -131,3 +133,87 @@ async def update_app_config(
     await db.commit()
     await db.refresh(config)
     return JSONResponse(AppConfigOut.model_validate(config).model_dump())
+
+
+# ---------------------------------------------------------------------------
+# VM Firewall Targets
+# ---------------------------------------------------------------------------
+
+def _target_out(target: VmFirewallTarget) -> dict:
+    return VmFirewallTargetOut(
+        id=target.id,
+        vm_name=target.vm_name,
+        project_id=target.project_id,
+        project_name=target.project.name,
+        firewall_name=target.firewall_name,
+    ).model_dump()
+
+
+@router.get("/vm-configs/by-name/{vm_name}/firewall-targets")
+async def list_firewall_targets(
+    vm_name: str,
+    current_user: User = Depends(get_current_user),  # noqa: ARG001
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    result = await db.execute(
+        select(VmFirewallTarget)
+        .where(VmFirewallTarget.vm_name == vm_name)
+        .join(VmFirewallTarget.project)
+    )
+    targets = result.scalars().all()
+    return JSONResponse({"targets": [_target_out(t) for t in targets]})
+
+
+@router.post("/vm-configs/by-name/{vm_name}/firewall-targets", status_code=201)
+async def add_firewall_target(
+    vm_name: str,
+    body: VmFirewallTargetCreate,
+    current_user: User = Depends(get_current_user),  # noqa: ARG001
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    project = await db.get(HetznerProject, body.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    existing = await db.execute(
+        select(VmFirewallTarget).where(
+            VmFirewallTarget.vm_name == vm_name,
+            VmFirewallTarget.project_id == body.project_id,
+            VmFirewallTarget.firewall_name == body.firewall_name,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Firewall target already exists.")
+
+    target = VmFirewallTarget(
+        vm_name=vm_name,
+        project_id=body.project_id,
+        firewall_name=body.firewall_name,
+    )
+    db.add(target)
+    await db.commit()
+    await db.refresh(target)
+    # reload with relationship
+    await db.refresh(target, ["project"])
+    return JSONResponse(_target_out(target), status_code=201)
+
+
+@router.delete("/vm-configs/by-name/{vm_name}/firewall-targets/{target_id}", status_code=204)
+async def delete_firewall_target(
+    vm_name: str,
+    target_id: int,
+    current_user: User = Depends(get_current_user),  # noqa: ARG001
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    result = await db.execute(
+        select(VmFirewallTarget).where(
+            VmFirewallTarget.id == target_id,
+            VmFirewallTarget.vm_name == vm_name,
+        )
+    )
+    target = result.scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=404, detail="Firewall target not found.")
+    await db.delete(target)
+    await db.commit()
+

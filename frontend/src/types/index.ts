@@ -61,6 +61,14 @@ export interface VmConfig {
   preferred_server_type: string | null;
 }
 
+export interface VmFirewallTarget {
+  id: number;
+  vm_name: string;
+  project_id: number;
+  project_name: string;
+  firewall_name: string;
+}
+
 export const HETZNER_SERVER_TYPES = [
   "cx23", "cx33", "cx43", "cx53",
   "cax11", "cax21", "cax31", "cax41",

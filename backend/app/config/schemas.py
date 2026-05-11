@@ -32,3 +32,18 @@ class AppConfigOut(BaseModel):
 
 class AppConfigUpdate(BaseModel):
     value: str
+
+
+class VmFirewallTargetOut(BaseModel):
+    id: int
+    vm_name: str
+    project_id: int
+    project_name: str
+    firewall_name: str
+
+    model_config = {"from_attributes": True}
+
+
+class VmFirewallTargetCreate(BaseModel):
+    project_id: int
+    firewall_name: str

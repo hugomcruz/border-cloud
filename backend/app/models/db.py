@@ -73,6 +73,24 @@ class UserProjectPermission(Base):
     )
 
 
+class VmFirewallTarget(Base):
+    """Cross-project firewall rules: when a VM gets a new IP, push it to these firewalls."""
+    __tablename__ = "vm_firewall_targets"
+    __table_args__ = (UniqueConstraint("vm_name", "project_id", "firewall_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vm_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("hetzner_projects.id", ondelete="CASCADE"), nullable=False
+    )
+    firewall_name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    project: Mapped["HetznerProject"] = relationship("HetznerProject")
+
+
 class VmConfig(Base):
     __tablename__ = "vm_configs"
 
