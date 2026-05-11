@@ -9,7 +9,7 @@ from app.settings import settings
 from app.models.db import VmConfig
 
 
-async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: str = "") -> None:
+async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: str = "", cloudflare_api_token: str = "") -> None:
     """Update the Cloudflare A record for the VM's domain to new_ip.
 
     Looks up the VM's domain from VmConfig, derives the zone root (last two labels),
@@ -36,7 +36,7 @@ async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: 
         zone_root = ".".join(parts[-2:]) if len(parts) >= 2 else domain
 
     headers = {
-        "Authorization": f"Bearer {settings.CLOUDFLARE_API_TOKEN}",
+        "Authorization": f"Bearer {cloudflare_api_token or settings.CLOUDFLARE_API_TOKEN}",
         "Content-Type": "application/json",
     }
 
@@ -105,7 +105,7 @@ async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: 
         ) from exc
 
 
-async def delete_dns_record(vm_name: str, db: AsyncSession, zone_id: str = "") -> None:
+async def delete_dns_record(vm_name: str, db: AsyncSession, zone_id: str = "", cloudflare_api_token: str = "") -> None:
     """Delete the Cloudflare A record for the VM's domain.
 
     No-op (with a log) if no domain is configured or the record doesn't exist.
@@ -125,7 +125,7 @@ async def delete_dns_record(vm_name: str, db: AsyncSession, zone_id: str = "") -
         zone_root = ".".join(parts[-2:]) if len(parts) >= 2 else domain
 
     headers = {
-        "Authorization": f"Bearer {settings.CLOUDFLARE_API_TOKEN}",
+        "Authorization": f"Bearer {cloudflare_api_token or settings.CLOUDFLARE_API_TOKEN}",
         "Content-Type": "application/json",
     }
 

@@ -38,6 +38,7 @@ class HetznerProject(Base):
     firewall_name: Mapped[str] = mapped_column(String, nullable=False, server_default="")
     firewall_internal: Mapped[str] = mapped_column(String, nullable=False, server_default="")
     cloudflare_zone_id: Mapped[str] = mapped_column(String, nullable=False, server_default="")
+    cloudflare_api_token: Mapped[str] = mapped_column(String, nullable=False, server_default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

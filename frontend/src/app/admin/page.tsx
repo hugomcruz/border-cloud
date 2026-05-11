@@ -356,6 +356,7 @@ function ProjectsTab() {
   const [firewallName, setFirewallName] = useState("");
   const [firewallInternal, setFirewallInternal] = useState("");
   const [cloudflareZoneId, setCloudflareZoneId] = useState("");
+  const [cloudflareApiToken, setCloudflareApiToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // Edit state
@@ -365,6 +366,7 @@ function ProjectsTab() {
   const [editFirewallName, setEditFirewallName] = useState("");
   const [editFirewallInternal, setEditFirewallInternal] = useState("");
   const [editCloudflareZoneId, setEditCloudflareZoneId] = useState("");
+  const [editCloudflareApiToken, setEditCloudflareApiToken] = useState("");
   const [editIsActive, setEditIsActive] = useState(true);
   const [editSubmitting, setEditSubmitting] = useState(false);
 
@@ -399,9 +401,9 @@ function ProjectsTab() {
     try {
       await apiFetch("/api/admin/projects", {
         method: "POST",
-        body: JSON.stringify({ name, api_token: apiToken, firewall_name: firewallName, firewall_internal: firewallInternal, cloudflare_zone_id: cloudflareZoneId }),
+        body: JSON.stringify({ name, api_token: apiToken, firewall_name: firewallName, firewall_internal: firewallInternal, cloudflare_zone_id: cloudflareZoneId, cloudflare_api_token: cloudflareApiToken }),
       });
-      setName(""); setApiToken(""); setFirewallName(""); setFirewallInternal(""); setCloudflareZoneId(""); setShowForm(false);
+      setName(""); setApiToken(""); setFirewallName(""); setFirewallInternal(""); setCloudflareZoneId(""); setCloudflareApiToken(""); setShowForm(false);
       void loadProjects();
       void refreshContext();
     } catch (e) {
@@ -420,6 +422,7 @@ function ProjectsTab() {
         firewall_name: editFirewallName,
         firewall_internal: editFirewallInternal,
         cloudflare_zone_id: editCloudflareZoneId,
+        cloudflare_api_token: editCloudflareApiToken || undefined,
         is_active: editIsActive,
       };
       if (editApiToken) body.api_token = editApiToken;
@@ -444,6 +447,7 @@ function ProjectsTab() {
     setEditFirewallName(project.firewall_name ?? "");
     setEditFirewallInternal(project.firewall_internal ?? "");
     setEditCloudflareZoneId(project.cloudflare_zone_id ?? "");
+    setEditCloudflareApiToken("");
     setEditIsActive(project.is_active);
     setExpandedProject(null);
   }
@@ -522,6 +526,10 @@ function ProjectsTab() {
           <div className="flex-1 min-w-[200px] space-y-1">
             <label className="text-xs text-muted-foreground">Cloudflare Zone ID (optional)</label>
             <Input value={cloudflareZoneId} onChange={(e) => setCloudflareZoneId(e.target.value)} placeholder="abc123…" />
+          </div>
+          <div className="flex-1 min-w-[240px] space-y-1">
+            <label className="text-xs text-muted-foreground">Cloudflare API Token (optional)</label>
+            <Input value={cloudflareApiToken} onChange={(e) => setCloudflareApiToken(e.target.value)} placeholder="cf_…" />
           </div>
           <Button type="submit" disabled={submitting} size="sm">
             {submitting ? "Creating…" : "Create"}
@@ -607,6 +615,10 @@ function ProjectsTab() {
                         <div className="flex-1 min-w-[200px] space-y-1">
                           <label className="text-xs text-muted-foreground">Cloudflare Zone ID</label>
                           <Input value={editCloudflareZoneId} onChange={(e) => setEditCloudflareZoneId(e.target.value)} placeholder="abc123…" />
+                        </div>
+                        <div className="flex-1 min-w-[240px] space-y-1">
+                          <label className="text-xs text-muted-foreground">Cloudflare API Token (leave blank to keep current)</label>
+                          <Input type="password" value={editCloudflareApiToken} onChange={(e) => setEditCloudflareApiToken(e.target.value)} placeholder="••••••••" />
                         </div>
                         <div className="flex items-center gap-2 pb-0.5">
                           <input

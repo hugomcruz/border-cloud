@@ -74,6 +74,7 @@ export interface HetznerProject {
   firewall_name: string;
   firewall_internal: string;
   cloudflare_zone_id: string;
+  cloudflare_api_token: string;
   is_active: boolean;
 }
 

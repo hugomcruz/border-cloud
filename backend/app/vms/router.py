@@ -74,7 +74,7 @@ async def _resolve_project(project_id: int, user: User, db: AsyncSession) -> Het
 # Background task: archive
 # --------------------------------------------------------------------------- #
 
-async def _run_archive(name: str, server_id: int, op_id: str, log_id: int, token: str, cloudflare_zone_id: str = "", initiated_by: str = "system", firewall_internal: str = "") -> None:
+async def _run_archive(name: str, server_id: int, op_id: str, log_id: int, token: str, cloudflare_zone_id: str = "", initiated_by: str = "system", firewall_internal: str = "", cloudflare_api_token: str = "") -> None:
     """Archive a VM: shutdown → snapshot → save state → delete.  Runs as a background asyncio task."""
     q = operations.get_queue(op_id)
     if q is None:
@@ -192,7 +192,7 @@ async def _run_archive(name: str, server_id: int, op_id: str, log_id: int, token
         # Step 4: Remove DNS record (non-fatal)
         try:
             from app.lib.cloudflare import delete_dns_record
-            await delete_dns_record(name, db, cloudflare_zone_id)
+            await delete_dns_record(name, db, cloudflare_zone_id, cloudflare_api_token)
         except Exception as exc:
             log.warning("[archive:%s] delete_dns_record failed: %s", name, exc)
             emit({"kind": "warning", "message": f"DNS record not removed: {exc}"})
@@ -211,7 +211,7 @@ async def _run_archive(name: str, server_id: int, op_id: str, log_id: int, token
 # Background task: delete (no snapshot)
 # --------------------------------------------------------------------------- #
 
-async def _run_delete(name: str, op_id: str, log_id: int, token: str, cloudflare_zone_id: str = "", initiated_by: str = "system", firewall_internal: str = "") -> None:
+async def _run_delete(name: str, op_id: str, log_id: int, token: str, cloudflare_zone_id: str = "", initiated_by: str = "system", firewall_internal: str = "", cloudflare_api_token: str = "") -> None:
     """Delete a VM immediately without snapshotting. Runs as a background asyncio task."""
     q = operations.get_queue(op_id)
     if q is None:
@@ -231,7 +231,7 @@ async def _run_delete(name: str, op_id: str, log_id: int, token: str, cloudflare
             emit({"kind": "step", "step": {"step": "Removing DNS record", "status": "in-progress"}})
             try:
                 from app.lib.cloudflare import delete_dns_record
-                await delete_dns_record(name, db, cloudflare_zone_id)
+                await delete_dns_record(name, db, cloudflare_zone_id, cloudflare_api_token)
                 emit({"kind": "step", "step": {"step": "Removing DNS record", "status": "done"}})
             except Exception as exc:
                 log.warning("[delete:%s] delete_dns_record failed: %s", name, exc)
@@ -276,7 +276,7 @@ async def _run_delete(name: str, op_id: str, log_id: int, token: str, cloudflare
 # Background task: restore
 # --------------------------------------------------------------------------- #
 
-async def _run_restore(name: str, op_id: str, log_id: int, token: str, firewall_name: str, cloudflare_zone_id: str = "", firewall_internal: str = "", initiated_by: str = "system") -> None:
+async def _run_restore(name: str, op_id: str, log_id: int, token: str, firewall_name: str, cloudflare_zone_id: str = "", firewall_internal: str = "", initiated_by: str = "system", cloudflare_api_token: str = "") -> None:
     """Restore a VM from snapshot.  Runs as a background asyncio task."""
     q = operations.get_queue(op_id)
     if q is None:
@@ -410,7 +410,7 @@ async def _run_restore(name: str, op_id: str, log_id: int, token: str, firewall_
             try:
                 from app.lib.cloudflare import update_a_record
                 log.info("[restore:%s] updating DNS for ip=%s domain=%s", name, public_ip, vm_cfg.domain)
-                await update_a_record(name, public_ip, db, cloudflare_zone_id)
+                await update_a_record(name, public_ip, db, cloudflare_zone_id, cloudflare_api_token)
                 emit({"kind": "step", "step": {"step": "Updating DNS", "status": "done"}})
             except Exception as exc:
                 log.warning("[restore:%s] update_a_record failed: %s", name, exc)
@@ -533,7 +533,7 @@ async def delete_vm(
     await db.refresh(op_log)
 
     op_id, _ = operations.new_operation()
-    asyncio.create_task(_run_delete(name, op_id, op_log.id, token, project.cloudflare_zone_id, current_user.username, project.firewall_internal))
+    asyncio.create_task(_run_delete(name, op_id, op_log.id, token, project.cloudflare_zone_id, current_user.username, project.firewall_internal, project.cloudflare_api_token))
 
     log.info("[delete:%s] started op_id=%s", name, op_id)
     return JSONResponse({"op_id": op_id}, status_code=202)
@@ -614,7 +614,7 @@ async def archive_vm(
     await db.refresh(op_log)
 
     op_id, _ = operations.new_operation()
-    asyncio.create_task(_run_archive(name, server.server_id, op_id, op_log.id, token, project.cloudflare_zone_id, current_user.username, project.firewall_internal))
+    asyncio.create_task(_run_archive(name, server.server_id, op_id, op_log.id, token, project.cloudflare_zone_id, current_user.username, project.firewall_internal, project.cloudflare_api_token))
 
     log.info("[archive:%s] started op_id=%s", name, op_id)
     return JSONResponse({"op_id": op_id}, status_code=202)
@@ -637,7 +637,7 @@ async def restore_vm(
     await db.refresh(op_log)
 
     op_id, _ = operations.new_operation()
-    asyncio.create_task(_run_restore(name, op_id, op_log.id, token, project.firewall_name, project.cloudflare_zone_id, project.firewall_internal, current_user.username))
+    asyncio.create_task(_run_restore(name, op_id, op_log.id, token, project.firewall_name, project.cloudflare_zone_id, project.firewall_internal, current_user.username, project.cloudflare_api_token))
 
     log.info("[restore:%s] started op_id=%s", name, op_id)
     return JSONResponse({"op_id": op_id}, status_code=202)

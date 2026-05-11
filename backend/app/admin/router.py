@@ -128,6 +128,7 @@ async def create_project(
         firewall_name=body.firewall_name,
         firewall_internal=body.firewall_internal,
         cloudflare_zone_id=body.cloudflare_zone_id,
+        cloudflare_api_token=body.cloudflare_api_token,
     )
     db.add(project)
     await db.commit()
@@ -157,6 +158,8 @@ async def update_project(
         project.firewall_internal = body.firewall_internal
     if body.cloudflare_zone_id is not None:
         project.cloudflare_zone_id = body.cloudflare_zone_id
+    if body.cloudflare_api_token is not None:
+        project.cloudflare_api_token = body.cloudflare_api_token
     if body.is_active is not None:
         project.is_active = body.is_active
 

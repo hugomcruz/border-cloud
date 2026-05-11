@@ -1,12 +1,9 @@
-# Production compose — no bundled database.
-# DATABASE_URL must point to an external/managed PostgreSQL instance.
-# Usage: docker compose -f docker-compose.prod.yml up --build -d
+# Production compose — pulls pre-built images from Harbor, no local build.
+# Usage: docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: harbor.bnov.net/border/cloud-ui-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file:
       - .env
@@ -16,11 +13,7 @@ services:
       - app-net
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        API_URL: http://backend:8000
+    image: harbor.bnov.net/border/cloud-ui-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       - backend

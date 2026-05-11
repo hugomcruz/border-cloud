@@ -27,6 +27,7 @@ class ProjectOut(BaseModel):
     firewall_name: str
     firewall_internal: str
     cloudflare_zone_id: str
+    cloudflare_api_token: str
     is_active: bool
     model_config = {"from_attributes": True}
 
@@ -37,6 +38,7 @@ class ProjectCreate(BaseModel):
     firewall_name: str = ""
     firewall_internal: str = ""
     cloudflare_zone_id: str = ""
+    cloudflare_api_token: str = ""
 
 
 class ProjectUpdate(BaseModel):
@@ -45,6 +47,7 @@ class ProjectUpdate(BaseModel):
     firewall_name: str | None = None
     firewall_internal: str | None = None
     cloudflare_zone_id: str | None = None
+    cloudflare_api_token: str | None = None
     is_active: bool | None = None
 
 
