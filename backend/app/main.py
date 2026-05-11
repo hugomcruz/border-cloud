@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
+import logging
 
 from fastapi import FastAPI, Request
 from slowapi import _rate_limit_exceeded_handler
@@ -15,6 +16,11 @@ from app.limiter import limiter
 from app.projects.router import router as projects_router
 from app.settings import settings
 from app.vms.router import router as vms_router
+
+logging.basicConfig(
+    level=settings.LOG_LEVEL.upper(),
+    format="%(levelname)-8s %(name)s — %(message)s",
+)
 
 
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
