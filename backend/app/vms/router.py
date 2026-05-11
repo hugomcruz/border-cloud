@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
 
 from app.auth.service import get_current_user
@@ -28,7 +29,7 @@ from app.lib.hetzner import (
     shutdown_server,
     upsert_user_ip_rule,
 )
-from app.models.db import AppConfig, HetznerProject, OperationLog, User, UserProjectPermission, VmArchivedState, VmConfig
+from app.models.db import AppConfig, HetznerProject, OperationLog, User, UserProjectPermission, VmArchivedState, VmConfig, VmFirewallTarget
 from app.vms.schemas import VirtualMachineOut
 
 router = APIRouter(prefix="/vms", tags=["vms"])
@@ -436,6 +437,24 @@ async def _run_restore(name: str, op_id: str, log_id: int, token: str, firewall_
                     "kind": "warning",
                     "message": f"Internal firewall not updated: {exc}",
                 })
+
+        # Step 4: Update cross-project firewall targets
+        fw_targets_result = await db.execute(
+            select(VmFirewallTarget)
+            .where(VmFirewallTarget.vm_name == name)
+            .options(selectinload(VmFirewallTarget.project))
+        )
+        fw_targets = fw_targets_result.scalars().all()
+        if fw_targets:
+            emit({"kind": "step", "step": {"step": "Updating firewall targets", "status": "in-progress"}})
+            for ft in fw_targets:
+                try:
+                    log.info("[restore:%s] updating firewall target project=%s firewall=%s ip=%s", name, ft.project.name, ft.firewall_name, public_ip)
+                    await upsert_user_ip_rule(ft.firewall_name, public_ip, ft.project.api_token, name)
+                except Exception as exc:
+                    log.warning("[restore:%s] firewall target %s/%s failed: %s", name, ft.project.name, ft.firewall_name, exc)
+                    emit({"kind": "warning", "message": f"Firewall target '{ft.project.name}/{ft.firewall_name}' not updated: {exc}"})
+            emit({"kind": "step", "step": {"step": "Updating firewall targets", "status": "done"}})
 
         emit({"kind": "complete", "summary": f"VM '{name}' restored. IP: {public_ip}"})
         if op_log:
