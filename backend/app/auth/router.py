@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.schemas import LoginRequest, TokenResponse, UserOut
-from app.auth.service import create_access_token, get_current_user, verify_password
+from app.auth.schemas import LoginRequest, TokenResponse, UpdateProfileRequest, UserOut
+from app.auth.service import create_access_token, get_current_user, hash_password, verify_password
 from app.database import async_session_factory, get_db
 from app.limiter import limiter
 from app.models.db import HetznerProject, User, UserProjectPermission
@@ -126,4 +126,35 @@ async def logout(response: Response) -> dict:
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)) -> UserOut:
     """Return the currently authenticated user's profile."""
+    return UserOut.model_validate(current_user)
+
+
+@router.patch("/me", response_model=UserOut)
+async def update_me(
+    body: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserOut:
+    """Update the current user's name, email, and/or password."""
+    if body.new_password is not None:
+        if not body.current_password:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="current_password is required to set a new password.",
+            )
+        if not verify_password(body.current_password, current_user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect.",
+            )
+        current_user.password_hash = hash_password(body.new_password)
+
+    if body.name is not None:
+        current_user.name = body.name or None
+    if body.email is not None:
+        current_user.email = body.email or None
+
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
     return UserOut.model_validate(current_user)

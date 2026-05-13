@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { ChevronDown, LogOut, ScrollText, Server, FolderOpen, Users, ShieldCheck } from "lucide-react";
+import { ChevronDown, LogOut, ScrollText, Server, FolderOpen, Users, ShieldCheck, UserCircle } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useState } from "react";
@@ -179,6 +179,18 @@ export function Sidebar({ onLogout }: SidebarProps) {
 
       {/* Footer */}
       <div className="border-t border-border px-3 py-3 space-y-1">
+        <Link
+          href="/profile"
+          className={cn(
+            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+            pathname === "/profile"
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          )}
+        >
+          <UserCircle className="h-4 w-4 shrink-0" />
+          {currentUser?.name ?? currentUser?.username ?? "Profile"}
+        </Link>
         <button
           onClick={handleUpdateIp}
           disabled={ipSyncState === "loading" || projects.length === 0}

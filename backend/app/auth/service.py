@@ -16,6 +16,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
 
 
+def hash_password(plain_password: str) -> str:
+    """Return a bcrypt hash of plain_password."""
+    return bcrypt.hashpw(plain_password.encode(), bcrypt.gensalt()).decode()
+
+
 def create_access_token(data: dict) -> str:
     """Create a signed JWT with the given payload and configured TTL."""
     to_encode = data.copy()

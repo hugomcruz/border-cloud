@@ -89,6 +89,8 @@ export interface HetznerProject {
 export interface User {
   id: number;
   username: string;
+  name: string | null;
+  email: string | null;
   is_superadmin: boolean;
   is_active: boolean;
 }
