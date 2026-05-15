@@ -25,6 +25,7 @@ export interface VirtualMachine {
   can_archive: boolean;
   can_start: boolean;
   can_stop: boolean;
+  can_delete_image?: boolean;
 }
 
 export type OperationStepStatus = "pending" | "in-progress" | "done" | "error";

@@ -12,26 +12,8 @@ from app.models.db import VmConfig
 log = logging.getLogger(__name__)
 
 
-async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: str = "", cloudflare_api_token: str = "") -> None:
-    """Update the Cloudflare A record for the VM's domain to new_ip.
-
-    Looks up the VM's domain from VmConfig, derives the zone root (last two labels),
-    then calls Cloudflare REST API v4 to PATCH the record.
-
-    Raises HTTPException(502) on any Cloudflare API failure.
-    """
-    # Resolve domain from VmConfig
-    result = await db.execute(select(VmConfig).where(VmConfig.vm_name == vm_name))
-    vm_config = result.scalar_one_or_none()
-
-    if vm_config is None or not vm_config.domain:
-        raise HTTPException(
-            status_code=502,
-            detail=f"No domain configured for VM '{vm_name}'. Cannot update DNS.",
-        )
-
-    domain = vm_config.domain
-    # Use explicit zone name if configured; otherwise derive from last two domain labels
+async def _write_a_record(domain: str, new_ip: str, zone_id: str, cloudflare_api_token: str, log_tag: str) -> None:
+    """Core Cloudflare A-record upsert. Raises HTTPException(502) on failure."""
     if settings.CLOUDFLARE_ZONE_NAME:
         zone_root = settings.CLOUDFLARE_ZONE_NAME
     else:
@@ -39,12 +21,10 @@ async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: 
         zone_root = ".".join(parts[-2:]) if len(parts) >= 2 else domain
 
     effective_token = cloudflare_api_token or settings.CLOUDFLARE_API_TOKEN
-    token_source = "project" if cloudflare_api_token else "global"
     token_hint = effective_token[:6] + "…" if effective_token else "(empty)"
-    zone_source = "project" if zone_id else ("settings" if settings.CLOUDFLARE_ZONE_ID else "lookup")
     log.info(
-        "[cloudflare:%s] update_a_record token_source=%s token=%s zone_source=%s zone_id=%r",
-        vm_name, token_source, token_hint, zone_source, zone_id or settings.CLOUDFLARE_ZONE_ID or "(will lookup)",
+        "[cloudflare:%s] _write_a_record domain=%s token=%s zone_id=%r",
+        log_tag, domain, token_hint, zone_id or settings.CLOUDFLARE_ZONE_ID or "(will lookup)",
     )
 
     headers = {
@@ -115,6 +95,36 @@ async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: 
             status_code=502,
             detail="Unable to reach Cloudflare API. Please try again.",
         ) from exc
+
+
+async def update_a_record_direct(domain: str, new_ip: str, zone_id: str = "", cloudflare_api_token: str = "") -> None:
+    """Update the Cloudflare A record for a known domain directly (no DB lookup).
+
+    Used during provisioning where the domain is already known from the request payload.
+    Raises HTTPException(502) on any Cloudflare API failure.
+    """
+    await _write_a_record(domain, new_ip, zone_id, cloudflare_api_token, domain)
+
+
+async def update_a_record(vm_name: str, new_ip: str, db: AsyncSession, zone_id: str = "", cloudflare_api_token: str = "") -> None:
+    """Update the Cloudflare A record for the VM's domain to new_ip.
+
+    Looks up the VM's domain from VmConfig, derives the zone root (last two labels),
+    then calls Cloudflare REST API v4 to PATCH the record.
+
+    Raises HTTPException(502) on any Cloudflare API failure.
+    """
+    # Resolve domain from VmConfig
+    result = await db.execute(select(VmConfig).where(VmConfig.vm_name == vm_name))
+    vm_config = result.scalar_one_or_none()
+
+    if vm_config is None or not vm_config.domain:
+        raise HTTPException(
+            status_code=502,
+            detail=f"No domain configured for VM '{vm_name}'. Cannot update DNS.",
+        )
+
+    await _write_a_record(vm_config.domain, new_ip, zone_id, cloudflare_api_token, vm_name)
 
 
 async def delete_dns_record(vm_name: str, db: AsyncSession, zone_id: str = "", cloudflare_api_token: str = "") -> None:

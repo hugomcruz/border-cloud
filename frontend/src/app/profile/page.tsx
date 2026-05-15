@@ -98,7 +98,7 @@ export default function ProfilePage() {
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar onLogout={handleLogout} />
       <main className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-lg mx-auto space-y-8">
+        <div className="space-y-6">
           <div>
             <h1 className="text-xl font-semibold">Profile</h1>
             <p className="text-sm text-muted-foreground mt-1">
@@ -106,8 +106,9 @@ export default function ProfilePage() {
             </p>
           </div>
 
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Profile info */}
-          <section className="rounded-lg border border-border bg-card p-6 space-y-4">
+          <section className="xl:col-span-2 rounded-lg border border-border bg-card p-6 space-y-4">
             <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
               Account Info
             </h2>
@@ -205,6 +206,7 @@ export default function ProfilePage() {
               </Button>
             </form>
           </section>
+          </div>
         </div>
       </main>
     </div>

@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { VmCard } from "@/components/VmCard";
+import { AddServerModal } from "@/components/AddServerModal";
 import { Sidebar } from "@/components/Sidebar";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { WarningBanner } from "@/components/WarningBanner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { useOperation } from "@/context/OperationContext";
 import { useProject } from "@/context/ProjectContext";
-import { RefreshCw, Server } from "lucide-react";
+import { Plus, RefreshCw, Server } from "lucide-react";
 import type { VirtualMachine } from "@/types";
 
 export default function Home() {
@@ -19,6 +21,9 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [firewallWarning, setFirewallWarning] = useState<string | null>(null);
+  const [showAddServer, setShowAddServer] = useState(false);
+  const [newServerName, setNewServerName] = useState<string | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshVms = useCallback(async (manual = false) => {
     if (!selectedProject) return;
@@ -82,6 +87,13 @@ export default function Home() {
     });
   }
 
+  function handleServerCreated(serverName: string) {
+    setNewServerName(serverName);
+    void refreshVms();
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setNewServerName(null), 6000);
+  }
+
   // While projects are loading, show a minimal skeleton layout
   if (projectLoading) {
     return (
@@ -114,6 +126,13 @@ export default function Home() {
   return (
     <>
       <Sidebar onLogout={handleLogout} />
+      {showAddServer && selectedProject && (
+        <AddServerModal
+          projectId={selectedProject.id}
+          onClose={() => setShowAddServer(false)}
+          onDone={handleServerCreated}
+        />
+      )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
@@ -122,14 +141,20 @@ export default function Home() {
             <h1 className="text-base font-semibold">{selectedProject?.name ?? "Hetzner"}</h1>
             <p className="text-xs text-muted-foreground">Virtual Machines</p>
           </div>
-          <button
-            onClick={() => void refreshVms(true)}
-            disabled={refreshing}
-            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void refreshVms(true)}
+              disabled={refreshing}
+              className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+            <Button size="sm" className="gap-1.5" onClick={() => setShowAddServer(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              Add Server
+            </Button>
+          </div>
         </header>
 
         {/* Stats strip */}
@@ -180,12 +205,16 @@ export default function Home() {
             <div className="flex flex-col items-center justify-center py-24 text-center">
               <Server className="h-12 w-12 text-muted-foreground/30 mb-4" />
               <p className="text-muted-foreground font-medium">No VMs found</p>
-              <p className="text-sm text-muted-foreground/60 mt-1">Servers will appear here once created in Hetzner.</p>
+              <p className="text-sm text-muted-foreground/60 mt-1">Add a server to get started.</p>
+              <Button className="mt-4 gap-1.5" onClick={() => setShowAddServer(true)}>
+                <Plus className="h-3.5 w-3.5" />
+                Add Server
+              </Button>
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {vms.map((vm) => (
-                <VmCard key={vm.name} vm={vm} projectId={selectedProject?.id ?? 0} onRefresh={() => void refreshVms()} />
+                <VmCard key={vm.name} vm={vm} projectId={selectedProject?.id ?? 0} onRefresh={() => void refreshVms()} highlighted={vm.name === newServerName} />
               ))}
             </div>
           )}

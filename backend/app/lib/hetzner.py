@@ -359,6 +359,35 @@ async def prune_old_snapshots(name: str, token: str, keep: int = 3) -> list[int]
     return deleted_ids
 
 
+async def delete_all_snapshots(name: str, token: str) -> list[int]:
+    """Delete all snapshots for a VM.
+
+    Returns a list of deleted image IDs.
+    """
+    try:
+        client = _get_client(token)
+        images: list[Any] = await asyncio.to_thread(
+            client.images.get_all, type="snapshot", label_selector=f"vm-name={name}"
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to reach Hetzner Cloud. Please try again.",
+        ) from exc
+
+    deleted_ids: list[int] = []
+    for img in images:
+        try:
+            await asyncio.to_thread(img.delete)
+            deleted_ids.append(img.id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete snapshot {img.id}: {exc}",
+            ) from exc
+    return deleted_ids
+
+
 # --------------------------------------------------------------------------- #
 # US4 — Restore (create server from snapshot)
 # --------------------------------------------------------------------------- #
@@ -638,3 +667,125 @@ async def remove_ip_rule_by_description(firewall_name: str, token: str, descript
         ) from exc
 
     return True
+
+
+# --------------------------------------------------------------------------- #
+# Provision — create a brand-new server from a public OS image
+# --------------------------------------------------------------------------- #
+
+# Preferred datacenter order (fsn1 = Falkenstein, nbg1 = Nuremberg, hel1 = Helsinki)
+_PROVISION_LOCATIONS = ["fsn1", "nbg1", "hel1"]
+
+# Canonical Hetzner image names for supported OS options
+_OS_IMAGE_NAMES: dict[str, str] = {
+    "debian-13": "debian-13",
+    "centos-stream-10": "centos-stream-10",
+    "rocky-linux-10": "rocky-10",
+}
+
+_K3S_CLOUD_CONFIG_TEMPLATE = """\
+#cloud-config
+packages:
+  - curl
+users:
+  - name: border
+    ssh-authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJg2/bQ63duykspuNeOHBMr2rpqOnMtByYCM6QdUwqOP hcruz@Hugos-MacBook-Pro.local
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+runcmd:
+  - apt-get update -y
+  - hostnamectl set-hostname {fqdn}
+  - curl https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable-cloud-controller" sh -
+  - chown border:border /etc/rancher/k3s/k3s.yaml
+  - chown border:border /var/lib/rancher/k3s/server/node-token
+"""
+
+
+async def get_project_resources(token: str) -> dict:
+    """Return all SSH keys, private networks, and firewalls available in a project."""
+    try:
+        client = _get_client(token)
+        ssh_keys: list[Any] = await asyncio.to_thread(client.ssh_keys.get_all)
+        networks: list[Any] = await asyncio.to_thread(client.networks.get_all)
+        firewalls: list[Any] = await asyncio.to_thread(client.firewalls.get_all)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to reach Hetzner Cloud. Please try again.",
+        ) from exc
+
+    return {
+        "ssh_keys": [{"id": k.id, "name": k.name} for k in ssh_keys],
+        "networks": [{"id": n.id, "name": n.name} for n in networks],
+        "firewalls": [{"id": f.id, "name": f.name} for f in firewalls],
+    }
+
+
+async def provision_server(
+    name: str,
+    server_type: str,
+    os_image: str,
+    token: str,
+    user_data: str | None = None,
+    ssh_key_names: list[str] | None = None,
+    firewall_ids: list[int] | None = None,
+    network_ids: list[int] | None = None,
+) -> dict:
+    """Create a brand-new server from a public OS image.
+
+    Tries datacenters in order: Falkenstein → Nuremberg → Helsinki.
+    IPv4 enabled, IPv6 disabled.
+    Returns {server_id, public_ip, actual_location}.
+    """
+    from hcloud.firewalls.domain import Firewall as FirewallRef
+    from hcloud.images.domain import Image as ImageRef
+    from hcloud.locations import Location
+    from hcloud.networks.domain import Network as NetworkRef
+    from hcloud.server_types import ServerType
+    from hcloud.servers.domain import ServerCreatePublicNetwork
+    from hcloud.ssh_keys import SSHKey
+
+    image_name = _OS_IMAGE_NAMES.get(os_image, os_image)
+    client = _get_client(token)
+
+    fw_objects = [FirewallRef(id=fid) for fid in (firewall_ids or [])]
+    net_objects = [NetworkRef(id=nid) for nid in (network_ids or [])]
+    ssh_key_objects = [SSHKey(name=k) for k in (ssh_key_names or [])]
+
+    last_exc: Exception | None = None
+    for loc in _PROVISION_LOCATIONS:
+        log.info("[hetzner] provision %s: trying type=%s image=%s loc=%s", name, server_type, image_name, loc)
+        try:
+            response = await asyncio.to_thread(
+                client.servers.create,
+                name=name,
+                server_type=ServerType(name=server_type),
+                image=ImageRef(name=image_name),
+                location=Location(name=loc),
+                ssh_keys=ssh_key_objects if ssh_key_objects else [],
+                user_data=user_data or "",
+                firewalls=fw_objects if fw_objects else None,
+                networks=net_objects if net_objects else None,
+                public_net=ServerCreatePublicNetwork(enable_ipv4=True, enable_ipv6=False),
+            )
+            server = response.server
+            # Poll until public IPv4 is assigned
+            for _ in range(20):
+                refreshed = await asyncio.to_thread(client.servers.get_by_id, server.id)
+                if refreshed and refreshed.public_net.ipv4 and refreshed.public_net.ipv4.ip:
+                    log.info("[hetzner] provision %s: success loc=%s ip=%s", name, loc, refreshed.public_net.ipv4.ip)
+                    return {"server_id": refreshed.id, "public_ip": refreshed.public_net.ipv4.ip, "actual_location": loc}
+                await asyncio.sleep(2)
+            raise HTTPException(status_code=500, detail="Server created but IP not assigned in time.")
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[hetzner] provision %s: loc=%s failed: %s", name, loc, exc)
+            last_exc = exc
+            continue
+
+    raise HTTPException(
+        status_code=500,
+        detail=f"Could not provision server in any datacenter. Last error: {last_exc}",
+    )

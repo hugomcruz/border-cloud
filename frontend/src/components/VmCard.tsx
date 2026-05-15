@@ -31,6 +31,7 @@ import {
   Loader2,
   Lock,
   History,
+  ImageOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { VirtualMachine, OperationEvent, OperationStep, OperationLog } from "@/types";
@@ -39,6 +40,7 @@ interface VmCardProps {
   vm: VirtualMachine;
   projectId: number;
   onRefresh: () => void;
+  highlighted?: boolean;
 }
 
 const statusConfig: Record<string, { dot: string; label: string; text: string }> = {
@@ -81,7 +83,7 @@ function useSseAction(vmName: string, projectId: number, onRefresh: () => void) 
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
   const [warning, setWarning] = useState<string | null>(null);
 
-  async function run(action: "archive" | "restore" | "delete") {
+  async function run(action: "archive" | "restore" | "delete" | "delete-image") {
     if (isLocked) return;
     lock(vmName, action);
     setSteps([]);
@@ -173,11 +175,13 @@ function useSseAction(vmName: string, projectId: number, onRefresh: () => void) 
   return { run, steps, error, setError, completedSteps, warning, setWarning, isLocked };
 }
 
-export function VmCard({ vm, projectId, onRefresh }: VmCardProps) {
+export function VmCard({ vm, projectId, onRefresh, highlighted = false }: VmCardProps) {
   const startStop = useSimpleAction(vm.name, projectId, onRefresh);
   const sse = useSseAction(vm.name, projectId, onRefresh);
   const [showSettings, setShowSettings] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showDeleteImageDialog, setShowDeleteImageDialog] = useState(false);
+  const [deleteImageConfirmName, setDeleteImageConfirmName] = useState("");
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<OperationLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -202,6 +206,12 @@ export function VmCard({ vm, projectId, onRefresh }: VmCardProps) {
     void sse.run("delete");
   }
 
+  function handleDeleteImageConfirm() {
+    setShowDeleteImageDialog(false);
+    setDeleteImageConfirmName("");
+    void sse.run("delete-image");
+  }
+
   const operationStatusColors: Record<string, string> = {
     done: "text-green-400 bg-green-500/10",
     error: "text-red-400 bg-red-500/10",
@@ -218,7 +228,10 @@ export function VmCard({ vm, projectId, onRefresh }: VmCardProps) {
   const location = vm.location ?? vm.latest_snapshot?.location;
 
   return (
-    <Card className="w-full overflow-hidden border border-border shadow-sm hover:shadow-md transition-shadow">
+    <Card className={cn(
+      "w-full overflow-hidden border border-border shadow-sm hover:shadow-md transition-shadow",
+      highlighted && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+    )}>
       {showSettings && (
         <VmSettingsModal vmName={vm.name} onClose={() => setShowSettings(false)} />
       )}
@@ -238,6 +251,45 @@ export function VmCard({ vm, projectId, onRefresh }: VmCardProps) {
             </Button>
             <Button variant="destructive" onClick={handleDeleteConfirm}>
               Yes, delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteImageDialog} onOpenChange={(open) => { setShowDeleteImageDialog(open); if (!open) setDeleteImageConfirmName(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <ImageOff className="h-5 w-5" />
+              Delete Image — {vm.name}
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently delete the archived snapshot image from Hetzner. The VM
+              cannot be restored after this. This action <strong>cannot be undone</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Type <span className="font-mono font-semibold text-foreground">{vm.name}</span> to confirm.
+            </p>
+            <input
+              type="text"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder={vm.name}
+              value={deleteImageConfirmName}
+              onChange={(e) => setDeleteImageConfirmName(e.target.value)}
+            />
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => { setShowDeleteImageDialog(false); setDeleteImageConfirmName(""); }}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteImageConfirmName !== vm.name}
+              onClick={handleDeleteImageConfirm}
+            >
+              Delete Image
             </Button>
           </div>
         </DialogContent>
@@ -385,6 +437,19 @@ export function VmCard({ vm, projectId, onRefresh }: VmCardProps) {
                 >
                   <RotateCcw className="h-3 w-3" />
                   Restore
+                </Button>
+              )}
+
+              {vm.can_delete_image && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="h-7 px-2.5 text-xs gap-1.5"
+                  onClick={() => setShowDeleteImageDialog(true)}
+                  disabled={sse.isLocked}
+                >
+                  <ImageOff className="h-3 w-3" />
+                  Delete Image
                 </Button>
               )}
 

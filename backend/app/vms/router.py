@@ -17,14 +17,17 @@ from app.lib import operations
 from app.lib.hetzner import (
     create_server_from_snapshot,
     create_snapshot,
+    delete_all_snapshots,
     delete_server,
     delete_server_by_name,
+    get_project_resources,
     get_server_attachment_config,
     list_servers,
     list_snapshots_by_label,
     power_off,
     power_on,
     prune_old_snapshots,
+    provision_server,
     remove_ip_rule_by_description,
     shutdown_server,
     upsert_user_ip_rule,
@@ -269,6 +272,71 @@ async def _run_delete(name: str, op_id: str, log_id: int, token: str, cloudflare
             op_log.completed_at = datetime.now(timezone.utc)
             await db.commit()
         log.info("[delete:%s] complete", name)
+
+    operations.finish_operation(op_id)
+
+
+# --------------------------------------------------------------------------- #
+# Background task: delete image (all snapshots for an archived VM)
+# --------------------------------------------------------------------------- #
+
+async def _run_delete_image(name: str, op_id: str, log_id: int, token: str, initiated_by: str = "system") -> None:
+    """Delete all Hetzner snapshots for an archived VM and remove its archived state from the DB."""
+    q = operations.get_queue(op_id)
+    if q is None:
+        return
+
+    async with async_session_factory() as db:
+        op_log = await db.get(OperationLog, log_id)
+
+        def emit(event: dict) -> None:  # type: ignore[type-arg]
+            log.debug("[delete-image:%s] emit %s", name, event)
+            _emit(q, event)
+
+        # Step 1: Delete all snapshots on Hetzner
+        emit({"kind": "step", "step": {"step": "Deleting snapshot image", "status": "in-progress"}})
+        try:
+            deleted = await delete_all_snapshots(name, token)
+            log.info("[delete-image:%s] deleted %d snapshot(s): %s", name, len(deleted), deleted)
+        except Exception as exc:
+            log.exception("[delete-image:%s] delete_all_snapshots failed", name)
+            emit({"kind": "error", "message": str(exc), "completedSteps": []})
+            if op_log:
+                op_log.status = "error"
+                op_log.error_message = str(exc)
+                op_log.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+            operations.finish_operation(op_id)
+            return
+        emit({"kind": "step", "step": {"step": "Deleting snapshot image", "status": "done"}})
+
+        # Step 2: Remove archived state records from DB
+        emit({"kind": "step", "step": {"step": "Removing archived state", "status": "in-progress"}})
+        try:
+            archived_rows = await db.execute(
+                select(VmArchivedState).where(VmArchivedState.vm_name == name)
+            )
+            for row in archived_rows.scalars().all():
+                await db.delete(row)
+            await db.commit()
+        except Exception as exc:
+            log.exception("[delete-image:%s] failed to remove archived state", name)
+            emit({"kind": "error", "message": str(exc), "completedSteps": ["Deleting snapshot image"]})
+            if op_log:
+                op_log.status = "error"
+                op_log.error_message = str(exc)
+                op_log.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+            operations.finish_operation(op_id)
+            return
+        emit({"kind": "step", "step": {"step": "Removing archived state", "status": "done"}})
+
+        emit({"kind": "complete", "summary": f"Image for '{name}' permanently deleted."})
+        if op_log:
+            op_log.status = "done"
+            op_log.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+        log.info("[delete-image:%s] complete", name)
 
     operations.finish_operation(op_id)
 
@@ -529,6 +597,7 @@ async def get_vms(
                     can_archive=False,
                     can_start=False,
                     can_stop=False,
+                    can_delete_image=True,
                 )
             )
 
@@ -555,6 +624,38 @@ async def delete_vm(
     asyncio.create_task(_run_delete(name, op_id, op_log.id, token, project.cloudflare_zone_id, current_user.username, project.firewall_internal, project.cloudflare_api_token))
 
     log.info("[delete:%s] started op_id=%s", name, op_id)
+    return JSONResponse({"op_id": op_id}, status_code=202)
+
+
+@router.post("/{name}/delete-image", status_code=202)
+async def delete_vm_image(
+    name: str,
+    project_id: int = Query(..., description="Hetzner project ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Permanently delete all snapshots/images for an archived VM; returns op_id immediately (202)."""
+    project = await _resolve_project(project_id, current_user, db)
+    token = project.api_token
+
+    # Verify the VM is actually archived (has a snapshot, no live server)
+    live_vms = await list_servers(token)
+    if any(v.name == name for v in live_vms):
+        raise HTTPException(status_code=409, detail=f"VM '{name}' is not archived. Stop and archive it first.")
+
+    snapshots = await list_snapshots_by_label(token)
+    if not any(s.vm_name == name for s in snapshots):
+        raise HTTPException(status_code=404, detail=f"No snapshot found for VM '{name}'.")
+
+    op_log = OperationLog(vm_name=name, operation="delete-image", status="in-progress", initiated_by=current_user.username)
+    db.add(op_log)
+    await db.commit()
+    await db.refresh(op_log)
+
+    op_id, _ = operations.new_operation()
+    asyncio.create_task(_run_delete_image(name, op_id, op_log.id, token, current_user.username))
+
+    log.info("[delete-image:%s] started op_id=%s", name, op_id)
     return JSONResponse({"op_id": op_id}, status_code=202)
 
 
@@ -695,6 +796,205 @@ async def get_vm_logs(
             for row in logs
         ]
     })
+
+
+# --------------------------------------------------------------------------- #
+# Resources helper — SSH keys, networks, firewalls for the provision modal
+# --------------------------------------------------------------------------- #
+
+@router.get("/resources")
+async def get_resources(
+    project_id: int = Query(..., description="Hetzner project ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Return SSH keys, private networks, and firewalls available in the project."""
+    project = await _resolve_project(project_id, current_user, db)
+    resources = await get_project_resources(project.api_token)
+    return JSONResponse(resources)
+
+
+# --------------------------------------------------------------------------- #
+# Background task: provision (create new server from public OS image)
+# --------------------------------------------------------------------------- #
+
+async def _run_provision(
+    name: str,
+    server_type: str,
+    os_image: str,
+    fqdn: str,
+    install_k3s: bool,
+    op_id: str,
+    log_id: int,
+    token: str,
+    cloudflare_zone_id: str = "",
+    cloudflare_api_token: str = "",
+    firewall_ids: list[int] | None = None,
+    network_ids: list[int] | None = None,
+    ssh_key_names: list[str] | None = None,
+    initiated_by: str = "system",
+    firewall_internal: str = "",
+) -> None:
+    """Provision a new VM from a public OS image. Runs as a background asyncio task."""
+    from app.lib.hetzner import _K3S_CLOUD_CONFIG_TEMPLATE  # noqa: PLC0415
+
+    q = operations.get_queue(op_id)
+    if q is None:
+        return
+
+    async with async_session_factory() as db:
+        op_log = await db.get(OperationLog, log_id)
+
+        def emit(event: dict) -> None:  # type: ignore[type-arg]
+            log.debug("[provision:%s] emit %s", name, event)
+            _emit(q, event)
+
+        # Build user_data
+        if install_k3s:
+            user_data = _K3S_CLOUD_CONFIG_TEMPLATE.format(fqdn=fqdn or name)
+        else:
+            user_data = ""
+
+        # Step 1: Create server
+        emit({"kind": "step", "step": {"step": "Creating server", "status": "in-progress"}})
+        try:
+            server_info = await provision_server(
+                name, server_type, os_image, token,
+                user_data=user_data or None,
+                ssh_key_names=ssh_key_names,
+                firewall_ids=firewall_ids,
+                network_ids=network_ids,
+            )
+            log.info("[provision:%s] server created: %s", name, server_info)
+        except Exception as exc:
+            log.exception("[provision:%s] provision_server failed", name)
+            emit({"kind": "error", "message": str(exc), "completedSteps": []})
+            if op_log:
+                op_log.status = "error"
+                op_log.error_message = str(exc)
+                op_log.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+            operations.finish_operation(op_id)
+            return
+        emit({"kind": "step", "step": {"step": "Creating server", "status": "done"}})
+
+        # Step 2: Persist VmConfig with FQDN so DNS lookup can find it in the next step
+        if fqdn:
+            try:
+                existing_cfg = await db.execute(select(VmConfig).where(VmConfig.vm_name == name))
+                vm_cfg = existing_cfg.scalar_one_or_none()
+                if vm_cfg is None:
+                    vm_cfg = VmConfig(vm_name=name, domain=fqdn)
+                    db.add(vm_cfg)
+                else:
+                    vm_cfg.domain = fqdn
+                await db.commit()
+                await db.refresh(vm_cfg)  # ensure session has fresh state for DNS step
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[provision:%s] VmConfig save failed: %s", name, exc)
+
+        # Step 3: DNS record (non-fatal) — pass fqdn directly so no DB re-lookup needed
+        if fqdn:
+            emit({"kind": "step", "step": {"step": "Creating DNS record", "status": "in-progress"}})
+            try:
+                from app.lib.cloudflare import update_a_record_direct  # noqa: PLC0415
+                public_ip = server_info.get("public_ip")
+                if public_ip:
+                    await update_a_record_direct(fqdn, public_ip, cloudflare_zone_id, cloudflare_api_token)
+                emit({"kind": "step", "step": {"step": "Creating DNS record", "status": "done"}})
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[provision:%s] DNS update failed: %s", name, exc)
+                emit({"kind": "step", "step": {"step": "Creating DNS record", "status": "done"}})
+                emit({"kind": "warning", "message": f"DNS record not created: {exc}"})
+
+        # Step 4: Internal firewall update (non-fatal)
+        if firewall_internal and server_info.get("public_ip"):
+            try:
+                await upsert_user_ip_rule(firewall_internal, server_info["public_ip"], token, name)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("[provision:%s] internal firewall update failed: %s", name, exc)
+
+        emit({"kind": "complete", "summary": f"VM '{name}' provisioned successfully."})
+        if op_log:
+            op_log.status = "done"
+            op_log.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+        log.info("[provision:%s] complete", name)
+
+    operations.finish_operation(op_id)
+
+
+@router.post("/provision", status_code=202)
+async def provision_vm(
+    payload: dict,
+    project_id: int = Query(..., description="Hetzner project ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Provision a brand-new VM from a public OS image; returns op_id immediately (202).
+
+    Expected payload:
+      {
+        "name": str,
+        "server_type": "cpx22" | "cpx32" | "cpx42",
+        "os_image": "debian-13" | "centos-stream-10" | "rocky-linux-10",
+        "fqdn": str | null,
+        "install_k3s": bool,
+        "firewall_ids": [int, ...],
+        "network_ids": [int, ...],
+        "ssh_key_names": [str, ...]
+      }
+    """
+    project = await _resolve_project(project_id, current_user, db)
+    token = project.api_token
+
+    name: str = payload.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="'name' is required.")
+
+    server_type: str = payload.get("server_type", "cpx22")
+    os_image: str = payload.get("os_image", "debian-13")
+    fqdn: str = payload.get("fqdn", "") or ""
+    install_k3s: bool = bool(payload.get("install_k3s", False))
+    firewall_ids: list[int] = [int(x) for x in payload.get("firewall_ids", [])]
+    network_ids: list[int] = [int(x) for x in payload.get("network_ids", [])]
+    ssh_key_names: list[str] = [str(x) for x in payload.get("ssh_key_names", [])]
+
+    # k3s only supported on Debian 13
+    if install_k3s and os_image != "debian-13":
+        raise HTTPException(status_code=422, detail="Kubernetes (k3s) is only supported on Debian 13.")
+
+    # Ensure name is not already in use
+    live_vms = await list_servers(token)
+    if any(v.name == name for v in live_vms):
+        raise HTTPException(status_code=409, detail=f"A server named '{name}' already exists.")
+
+    op_log = OperationLog(vm_name=name, operation="provision", status="in-progress", initiated_by=current_user.username)
+    db.add(op_log)
+    await db.commit()
+    await db.refresh(op_log)
+
+    op_id, _ = operations.new_operation()
+    asyncio.create_task(_run_provision(
+        name=name,
+        server_type=server_type,
+        os_image=os_image,
+        fqdn=fqdn,
+        install_k3s=install_k3s,
+        op_id=op_id,
+        log_id=op_log.id,
+        token=token,
+        cloudflare_zone_id=project.cloudflare_zone_id or "",
+        cloudflare_api_token=project.cloudflare_api_token or "",
+        firewall_ids=firewall_ids,
+        network_ids=network_ids,
+        ssh_key_names=ssh_key_names,
+        initiated_by=current_user.username,
+        firewall_internal=project.firewall_internal or "",
+    ))
+
+    log.info("[provision:%s] started op_id=%s", name, op_id)
+    return JSONResponse({"op_id": op_id}, status_code=202)
 
 
 @router.get("/operations/{op_id}/stream")

@@ -24,6 +24,7 @@ class VirtualMachineOut(BaseModel):
     can_archive: bool
     can_start: bool
     can_stop: bool
+    can_delete_image: bool = False
 
 
 class OperationEventOut(BaseModel):
