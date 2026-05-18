@@ -123,6 +123,17 @@ async def logout(response: Response) -> dict:
     return {"message": "Logged out"}
 
 
+@router.post("/refresh")
+async def refresh_token(
+    response: Response,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Re-issue the auth cookie for an authenticated user, extending the session TTL."""
+    token = create_access_token({"sub": current_user.username})
+    response.set_cookie(value=token, **_COOKIE_KWARGS)
+    return {"message": "Token refreshed"}
+
+
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)) -> UserOut:
     """Return the currently authenticated user's profile."""
