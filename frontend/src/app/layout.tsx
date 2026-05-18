@@ -4,6 +4,10 @@ import { AppConfigProvider } from "@/context/AppConfigContext";
 import { OperationProvider } from "@/context/OperationContext";
 import { ProjectProvider } from "@/context/ProjectContext";
 
+// Force per-request rendering so process.env values (THEME, LOGO_URL)
+// are read from the live environment on every request, not baked at build time.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Border Cloud",
   description: "Border Cloud — multi-cloud VM management",
