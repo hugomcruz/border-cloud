@@ -2,8 +2,8 @@ import Image from "next/image";
 import { LoginForm } from "@/components/LoginForm";
 
 export default function LoginPage() {
-  const logoSrc = process.env.NEXT_PUBLIC_LOGO_URL ?? "/border-logo.svg";
-  const isLight = process.env.NEXT_PUBLIC_THEME === "light";
+  const logoSrc = process.env.LOGO_URL ?? "/border-logo.svg";
+  const isLight = process.env.THEME === "light";
 
   return (
     <main className="flex min-h-screen w-full">

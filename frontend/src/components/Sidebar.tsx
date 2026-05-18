@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useState } from "react";
 import Link from "next/link";
+import { useAppConfig } from "@/context/AppConfigContext";
 import { useProject } from "@/context/ProjectContext";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +59,7 @@ function AdminNav() {
 
 export function Sidebar({ onLogout }: SidebarProps) {
   const pathname = usePathname();
+  const { theme, logoUrl } = useAppConfig();
   const { projects, selectedProject, setSelectedProject, currentUser } = useProject();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [ipSyncState, setIpSyncState] = useState<"idle" | "loading" | "done" | "error">("idle");
@@ -91,14 +93,14 @@ export function Sidebar({ onLogout }: SidebarProps) {
       {/* Logo / Brand */}
       <div className="flex flex-col gap-1 px-4 py-4 border-b border-border">
         <Image
-          src={process.env.NEXT_PUBLIC_LOGO_URL ?? "/border-logo.svg"}
+          src={logoUrl}
           unoptimized
           alt="Border Cloud"
           width={120}
           height={20}
-          className={`h-5 w-auto object-contain object-left ${process.env.NEXT_PUBLIC_THEME === "light" ? "[filter:brightness(0)]" : "[filter:brightness(0)_invert(1)]"}`}
+          className={`h-5 w-auto object-contain object-left ${theme === "light" ? "[filter:brightness(0)]" : "[filter:brightness(0)_invert(1)]"}`}
         />
-        <p className={`text-[10px] font-bold tracking-[0.2em] uppercase pl-0.5 ${process.env.NEXT_PUBLIC_THEME === "light" ? "text-blue-600" : "text-blue-400"}`}>Cloud</p>
+        <p className={`text-[10px] font-bold tracking-[0.2em] uppercase pl-0.5 ${theme === "light" ? "text-blue-600" : "text-blue-400"}`}>Cloud</p>
       </div>
 
       {/* Project selector */}
