@@ -13,8 +13,10 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const theme = process.env.NEXT_PUBLIC_THEME === "light" ? "light" : "dark";
+
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className={theme}>
       <body className="font-sans antialiased">
         <ProjectProvider>
           <OperationProvider>

@@ -44,11 +44,15 @@ services:
       args:
         API_URL: http://backend:8000
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       - backend
     environment:
       API_URL: http://backend:8000
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXT_PUBLIC_THEME: ${NEXT_PUBLIC_THEME:-light}
+      NEXT_PUBLIC_LOGO_URL: ${NEXT_PUBLIC_LOGO_URL:-https://cloud.berzuk.com/berzuk-logo.svg}
     ports:
       - "3000:3000"
     networks:

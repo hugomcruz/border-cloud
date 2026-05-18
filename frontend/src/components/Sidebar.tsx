@@ -89,9 +89,16 @@ export function Sidebar({ onLogout }: SidebarProps) {
   return (
     <aside className="flex h-screen w-56 flex-col border-r border-border bg-card text-card-foreground">
       {/* Logo / Brand */}
-      <div className="flex flex-col gap-1 px-4 py-4 border-b border-border bg-[#0f1221]">
-        <Image src="/border-logo.svg" alt="Border Cloud" width={120} height={20} className="h-5 w-auto object-contain [filter:brightness(0)_invert(1)]" />
-        <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-blue-400 pl-0.5">Cloud</p>
+      <div className="flex flex-col gap-1 px-4 py-4 border-b border-border">
+        <Image
+          src={process.env.NEXT_PUBLIC_LOGO_URL ?? "/border-logo.svg"}
+          unoptimized
+          alt="Border Cloud"
+          width={120}
+          height={20}
+          className={`h-5 w-auto object-contain object-left ${process.env.NEXT_PUBLIC_THEME === "light" ? "[filter:brightness(0)]" : "[filter:brightness(0)_invert(1)]"}`}
+        />
+        <p className={`text-[10px] font-bold tracking-[0.2em] uppercase pl-0.5 ${process.env.NEXT_PUBLIC_THEME === "light" ? "text-blue-600" : "text-blue-400"}`}>Cloud</p>
       </div>
 
       {/* Project selector */}
